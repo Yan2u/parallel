@@ -31,3 +31,17 @@
 - Clean up and rebuild
 
     Add `make clean` before the commands above.
+
+#### 2025-03-05
+
+- Proved `hoare_while` using defined `iter_count`, which describes that in n loops, the condition `b` evals to `false` after the last loop and evals to `true` before the last loop.
+
+- **Unable to prove that**: if a `WHILE` statement at state `st` is reduced to `SKIP` at state `st'`, then there exists `n`, s.t. `iter_count b c n st st'`.
+
+- Thoughts:
+
+    + We cannot make inductions on the structure of statement `WHILE`, because when it is reduced one step forward, it's structure changes to `TEST`, which cannot fit the prop;
+
+    + We may use **invariants** before and after reduction to prove that: **if `P a -> R a b -> P b`**, `P` is `X -> Prop`, `R` is the reduction relation, and **then forall `c` where `multi R a c`, we have `P c`**.
+
+    + Unable to find such invariants to fit my `iter_count` props.
