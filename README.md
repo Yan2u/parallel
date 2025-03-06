@@ -16,7 +16,7 @@
 
 **TODOs**
 
-- Proof of `hoare_while`;
+- ✅: Proof of `hoare_while`;
 - Proof of `auxiliary_variables_transformation`;
 - Proofs in the chapters left.
 
@@ -38,10 +38,8 @@
 
 - **Unable to prove that**: if a `WHILE` statement at state `st` is reduced to `SKIP` at state `st'`, then there exists `n`, s.t. `iter_count b c n st st'`.
 
-- Thoughts:
+#### 2025-03-06
 
-    + We cannot make inductions on the structure of statement `WHILE`, because when it is reduced one step forward, it's structure changes to `TEST`, which cannot fit the prop;
+- Finish whole proof chain of `hoare_while`, using `iter_count` and a lemma `com_hoare_count_pre`;
 
-    + We may use **invariants** before and after reduction to prove that: **if `P a -> R a b -> P b`**, `P` is `X -> Prop`, `R` is the reduction relation, and **then forall `c` where `multi R a c`, we have `P c`**.
-
-    + Unable to find such invariants to fit my `iter_count` props.
+- Created Notes.md and move **thoughts** in.

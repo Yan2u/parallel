@@ -854,4 +854,207 @@ Proof.
     inversion H0; subst. inversion H3; subst. reflexivity. inversion H4. inversion H4.
 Qed.
 
+(* Some important facts about WHILE statement *)
+
+Lemma com_if_false_rev : forall b c1 c2 st st',
+  TEST b THEN c1 ELSE c2 FI / st --c->* SKIP / st' ->
+  beval st b = false ->
+  c2 / st --c->* SKIP / st'.
+Proof.
+  intros. dependent induction H.
+  inversion H; subst.
+  - specialize (IHmulti b' c1 c2 st st'). destruct IHmulti; try reflexivity.
+    apply bstep_beval_equal in H7. rewrite <- H7. assumption.
+    apply multi_refl. eapply multi_step. apply H2. apply m.
+  - inversion H1.
+  - apply H0.
+Qed.
+
+Lemma com_if_true_rev : forall b c1 c2 st st',
+  TEST b THEN c1 ELSE c2 FI / st --c->* SKIP / st' ->
+  beval st b = true ->
+  c1 / st --c->* SKIP / st'.
+Proof.
+  intros. dependent induction H.
+  inversion H; subst.
+  - specialize (IHmulti b' c1 c2 st st'). destruct IHmulti; try reflexivity.
+    apply bstep_beval_equal in H7. rewrite <- H7. assumption.
+    apply multi_refl. eapply multi_step. apply H2. apply m.
+  - apply H0.
+  - inversion H1.
+Qed.
+
+Lemma com_while_false_eqst : forall b c st st',
+  (WHILE b DO c END) / st --c->* SKIP / st' ->
+  beval st b = false ->
+  st = st'.
+Proof.
+  intros. inversion H; subst. inversion H1; subst.
+  assert (Hfalse := com_if_false _ _ _ _ _ H2 H0).
+  inversion Hfalse; subst; try solve_by_invert. reflexivity.
+Qed.
+
+Inductive iter_count : bexp -> com -> nat -> state -> state -> Prop :=
+  | ic_end : forall b c st, beval st b = false -> iter_count b c 0 st st
+  | ic_step : forall b c st st' st'' n,
+      beval st b = true ->
+      c / st --c->* SKIP / st' ->
+      iter_count b c n st' st'' ->
+      iter_count b c (S n) st st''.
+
+Lemma iter_count_split : forall b c n st st',
+  iter_count b c (S n) st st' ->
+  exists st'', c / st --c->* SKIP / st'' /\ iter_count b c n st'' st'.
+Proof.
+  intros. inversion H. subst. exists st'0. split; assumption.
+Qed.
+
+Definition step_infer {X: Type} (R: relation X) (P: X -> Prop) : Prop :=
+  forall a b, P a -> R a b -> P b.
+
+Lemma multi_infer {X: Type} (R: relation X) (P: X -> Prop) :
+  step_infer R P ->
+  forall a b, P a -> multi R a b -> P b.
+Proof.
+  unfold step_infer. intros Hstep a b HP Hmulti.
+  induction Hmulti; subst; try assumption.
+  assert (Hz := IHHmulti (Hstep x y HP H)). assumption.
+Qed.
+
+Lemma multi_end {X : Type} (R: relation X):
+  forall (x y: X), multi R x y ->
+  x = y \/ (x <> y /\ exists z, multi R x z /\ R z y).
+Proof.
+  intros. dependent induction H.
+  - left. reflexivity.
+  - destruct IHmulti as [IHmulti | [IHmulti_neq [z0 [IHmulti1 IHmulti2]]]];
+    assert (Hexmid := classic (x = z)); destruct Hexmid as [Hexmid | Hexmid];
+    try (left; assumption); right; split; try assumption.
+    subst. exists x. split; try assumption. apply multi_refl.
+    exists z0. split; try assumption. eapply multi_step. apply H. apply IHmulti1. 
+Qed. 
+
+Inductive while_succ : (com * state) -> (com * state) -> Prop :=
+  | ws_self : forall b c st st', while_succ (WHILE b DO c END, st) (WHILE b DO c END, st')
+  | ws_if : forall b b' c st st', 
+    b / st' --b->* b' ->
+    while_succ (WHILE b DO c END, st) (TEST b' THEN c;; WHILE b DO c END ELSE SKIP FI, st')
+  | ws_seq : forall b c c' st st', 
+    while_succ (WHILE b DO c END, st) (c' ;; WHILE b DO c END, st')
+  | ws_skip : forall b c st st',
+    while_succ (WHILE b DO c END, st) (SKIP, st').
+  
+Lemma com_while_succ : forall b c c' st st',
+  (WHILE b DO c END) / st --c->* c' / st' ->
+  while_succ (WHILE b DO c END, st) (c', st').
+Proof.
+  intros. remember (while_succ (WHILE b DO c END, st)) as Hws.
+  assert (Hsi : step_infer cstep Hws). {
+    unfold step_infer. intros. subst. inversion H0; subst; inversion H1; subst.
+    - eapply ws_if. apply multi_refl.
+    - eapply ws_if. eapply multi_trans. apply H6. eapply multi_step. apply H8. apply multi_refl.
+    - eapply ws_seq.
+    - eapply ws_skip.
+    - eapply ws_seq.
+    - eapply ws_self.
+  }
+  assert (Hmi := multi_infer cstep Hws Hsi).
+  assert (Hst : Hws (WHILE b DO c END, st)). { subst. apply ws_self. }
+  eapply Hmi. apply Hst. apply H.
+Qed.
+
+Lemma com_while_false : forall b c st st',
+  (WHILE b DO c END) / st --c->* SKIP / st' ->
+  beval st' b = false.
+Proof.
+  intros. 
+  assert (Hend := multi_end cstep _ _ H).
+  destruct Hend as [Hend_eq | [Hend_neq [z [Hend1 Hend2]]]]; try solve_by_invert.
+  destruct z as [cz stz].
+  assert (Hsucc := com_while_succ _ _ _ _ _ Hend1).
+  inversion Hend2; try (subst; inversion Hsucc); subst.
+  apply bmultistep_beval_equal in H1. simpl in H1. assumption.
+Qed.
+
+Definition is_seq (c : com) : bool :=
+  match c with
+  | CSeq _ _ => true
+  | _ => false
+  end.
+
+Definition seq_left (c : com) : com :=
+  match c with
+  | CSeq c1 _ => c1
+  | _ => SKIP
+  end.
+
+Lemma com_seq_left : forall c1 c1' c2 st st',
+  c1 / st --c->* c1' / st' ->
+  (c1 ;; c2) / st --c->* (c1' ;; c2) / st'.
+Proof.
+  intros. dependent induction H. apply multi_refl.
+    destruct y as [cy sty]. specialize (IHmulti cy c1' sty st').
+    eapply multi_step. apply CS_SeqStep. apply H. apply IHmulti; reflexivity.
+Qed.
+
+Lemma com_while_count_rev : forall b c n st st',
+  iter_count b c n st st' ->
+  WHILE b DO c END / st --c->* SKIP / st'.
+Proof.
+  intros. dependent induction H.
+  - eapply multi_step. ector.
+    apply bmultistep_beval_iff in H.
+    assert (Hfwd := com_if_fwd _ _ (c;; WHILE b DO c END) SKIP _ H).
+    eapply multi_trans. apply Hfwd. eapply multi_step. apply CS_IfFalse.
+    apply multi_refl.
+  - eapply multi_step. ector.
+    apply bmultistep_beval_iff in H.
+    assert (Hfwd := com_if_fwd _ _ (c;; WHILE b DO c END) SKIP _ H).
+    eapply multi_trans. apply Hfwd. eapply multi_step. apply CS_IfTrue.
+    eapply com_seq_compose. apply H0. apply IHiter_count.
+Qed.
+
+Lemma com_while_count_pre : forall b c st c0 st0 st',
+  WHILE b DO c END / st --c->* c0 / st0
+  -> c0 / st0 --c->* SKIP / st'
+  -> ((is_seq c0 = false /\ exists n, iter_count b c n st0 st')
+      \/ (is_seq c0 = true /\ exists st1, ((seq_left c0) / st0 --c->* SKIP / st1 /\ exists n, iter_count b c n st1 st'))).
+Proof.
+  intros. assert (Hsucc := com_while_succ _ _ _ _ _ H).
+  assert (Hterminate: (WHILE b DO c END) / st --c->* SKIP / st').
+  { eapply multi_trans. apply H. apply H0. }
+  assert (Hend := com_while_false _ _ _ _ Hterminate).
+  dependent induction H0; subst.
+  - left. split; try reflexivity. exists 0. apply ic_end. assumption.
+  - destruct y as [cy sty]. specialize (IHmulti cy sty st').
+    assert (Hsty : (WHILE b DO c END) / st --c->* cy / sty).
+    { eapply multi_trans. apply H. eapply multi_step. apply H1. apply multi_refl. }
+    assert (Hsucc' := com_while_succ _ _ _ _ _ Hsty).
+    destruct IHmulti; try assumption; try reflexivity.
+    + destruct H2 as [Hseq [n Hiter]].
+      inversion Hsucc; subst; inversion Hsucc'; subst; inversion H1; subst; try solve_by_invert. 
+      * left. split; try reflexivity. exists n. assumption.
+      * left. split; try reflexivity. exists n. assumption.
+      * left. split; try reflexivity. exists n. assumption.
+      * right. split; try reflexivity; simpl. exists sty. split.
+        apply multi_refl. exists n. assumption.
+    + destruct H2 as [Hseq [st1 [Hseq' [n Hiter]]]].
+      inversion Hsucc; subst; inversion Hsucc'; subst; inversion H1; subst; try solve_by_invert 5; simpl in *.
+      * left. split; try reflexivity. exists (S n). eapply ic_step.
+        apply bmultistep_beval_equal in H3. simpl in H3. assumption.
+        apply Hseq'. apply Hiter.
+      * right. split; try assumption. exists st1. split. eapply multi_step. apply H3. apply Hseq'. exists n. assumption.
+Qed.
+
+Lemma com_while_count : forall b c st st',
+  (WHILE b DO c END) / st --c->* SKIP / st'
+  -> exists n, iter_count b c n st st'.
+Proof.
+  intros.
+  assert (Hself: (WHILE b DO c END) / st --c->* (WHILE b DO c END) / st). apply multi_refl.
+  assert (Hpre := com_while_count_pre _ _ _ _ _ _ Hself H).
+  destruct Hpre as [[Hnseq [n Hiter]] | [Hseq _]]; try solve_by_invert.
+  exists n. assumption.
+Qed.
+
 Close Scope imp_scope.
